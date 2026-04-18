@@ -2,7 +2,7 @@ import { ROUTES } from "@/src/constants/route";
 import { STORAGE_KEYS } from "@/src/constants/storageKeys";
 import { Button } from "@/src/elements/ui/button";
 import { Input } from "@/src/elements/ui/input";
-import { useGetIsDemoModeQuery, useGetRolesQuery } from "@/src/redux/api/authApi";
+import { useGetIsDemoModeQuery } from "@/src/redux/api/authApi";
 import { useAppSelector } from "@/src/redux/hooks";
 import { getStorage } from "@/src/utils";
 import { Label } from "@radix-ui/react-label";
@@ -54,12 +54,6 @@ export const LoginPage = () => {
   const { authRedirectField } = useAppSelector((state) => state.auth);
   const { allow_user_signup } = useAppSelector((state) => state.setting);
 
-  const { data: rolesRes } = useGetRolesQuery();
-  const roles = rolesRes?.data?.roles || [];
-
-  const userRole = roles.find((r) => r.name.toLowerCase() === "user");
-  const agentRole = roles.find((r) => r.name.toLowerCase() === "agent");
-
   useEffect(() => {
     if (!demoModeRes || !isSuccess) return;
 
@@ -107,18 +101,10 @@ export const LoginPage = () => {
     setIsLoading(true);
     setError("");
 
-    const selectedRoleId = roleType === "user" ? userRole?._id : agentRole?._id;
-
-    if (!selectedRoleId) {
-      setError("Role information not loaded yet. Please try again.");
-      setIsLoading(false);
-      return;
-    }
-
     const result = await signIn("credentials", {
       email,
       password,
-      role: selectedRoleId,
+      role: roleType,
       redirect: false,
     });
 

@@ -3,6 +3,59 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import Github from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 
+const FALLBACK_BACKEND_API_URL = "https://api.chatpanelpro.com/api";
+const LOCAL_BACKEND_API_URL = "http://127.0.0.1:5000/api";
+
+type JsonFetchResult<T> = {
+  response: Response;
+  data: T;
+  url: string;
+};
+
+const getBackendApiCandidates = () => {
+  const candidates = [
+    process.env.NEXT_PUBLIC_API_URL,
+    process.env.NEXT_PUBLIC_BASE_URL ? `${process.env.NEXT_PUBLIC_BASE_URL}/api` : undefined,
+    FALLBACK_BACKEND_API_URL,
+    LOCAL_BACKEND_API_URL,
+  ].filter((value): value is string => Boolean(value));
+
+  return [...new Set(candidates)];
+};
+
+const fetchJsonWithFallback = async <T>(path: string, init?: RequestInit): Promise<JsonFetchResult<T>> => {
+  const errors: string[] = [];
+
+  for (const baseUrl of getBackendApiCandidates()) {
+    const url = `${baseUrl}${path}`;
+
+    try {
+      const response = await fetch(url, {
+        ...init,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...(init?.headers || {}),
+        },
+        cache: "no-store",
+      });
+
+      const text = await response.text();
+      if (text.trim().startsWith("<")) {
+        errors.push(`${url} returned HTML`);
+        continue;
+      }
+
+      const data = JSON.parse(text) as T;
+      return { response, data, url };
+    } catch (error) {
+      errors.push(`${url} failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  throw new Error(errors[0] || `Failed to fetch ${path}`);
+};
+
 declare module "next-auth" {
   interface Session {
     accessToken: string | unknown;
@@ -51,17 +104,16 @@ export const authoption: NextAuthOptions = {
 
           // Allow the login form to pass a role name and resolve it via the public roles endpoint.
           if (requestedRole && !/^[a-f\d]{24}$/i.test(requestedRole)) {
-            const rolesResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/roles`, {
+            const { response: rolesResponse, data: rolesData, url: rolesUrl } = await fetchJsonWithFallback<{
+              success?: boolean;
+              message?: string;
+              data?: Array<{ _id: string; name: string }>;
+            }>("/auth/roles", {
               method: "GET",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              cache: "no-store",
             });
 
-            const rolesData = await rolesResponse.json();
             if (!rolesResponse.ok) {
-              throw new Error(rolesData?.message || "Failed to load role information");
+              throw new Error(rolesData?.message || `Failed to load role information from ${rolesUrl}`);
             }
 
             const matchedRole = rolesData?.data?.find((role: { _id: string; name: string }) => role.name?.toLowerCase() === requestedRole);
@@ -72,11 +124,17 @@ export const authoption: NextAuthOptions = {
             roleId = matchedRole._id;
           }
 
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
+          const { response: res, data, url: loginUrl } = await fetchJsonWithFallback<{
+            message?: string;
+            token?: string;
+            user?: {
+              id: string;
+              name: string;
+              email: string;
+              role: string;
+            };
+          }>("/auth/login", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
             body: JSON.stringify({
               identifier: credentials.email,
               password: credentials.password,
@@ -84,10 +142,8 @@ export const authoption: NextAuthOptions = {
             }),
           });
 
-          const data = await res.json();
-
           if (!res.ok) {
-            throw new Error(data?.message || "Invalid credentials");
+            throw new Error(data?.message || `Invalid credentials from ${loginUrl}`);
           }
 
           if (!data.user || !data.token) {

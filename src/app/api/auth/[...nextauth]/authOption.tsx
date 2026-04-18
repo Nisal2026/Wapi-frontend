@@ -23,7 +23,7 @@ const getBackendApiCandidates = () => {
   return [...new Set(candidates)];
 };
 
-const fetchJsonWithFallback = async <T>(path: string, init?: RequestInit): Promise<JsonFetchResult<T>> => {
+const fetchJsonWithFallback = async <T,>(path: string, init?: RequestInit): Promise<JsonFetchResult<T>> => {
   const errors: string[] = [];
 
   for (const baseUrl of getBackendApiCandidates()) {

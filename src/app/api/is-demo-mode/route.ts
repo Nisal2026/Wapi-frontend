@@ -1,15 +1,39 @@
 import { PUBLIC_API_URL } from "@/src/constants/route";
 import { NextResponse } from "next/server";
 
+const FALLBACK_PUBLIC_API_URL = "https://api.chatpanelpro.com/api";
+
 export async function GET() {
   try {
-    const response = await fetch(`${PUBLIC_API_URL}/is-demo-mode`, {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    const baseUrl = PUBLIC_API_URL || FALLBACK_PUBLIC_API_URL;
+    const readJsonResponse = async (url: string) => {
+      const response = await fetch(url, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      });
 
-    const data = await response.json();
+      const text = await response.text();
+      if (text.trim().startsWith("<")) {
+        throw new Error(`Expected JSON from ${url} but received HTML`);
+      }
+
+      const data = JSON.parse(text);
+      return { response, data };
+    };
+
+    let result;
+    try {
+      result = await readJsonResponse(`${baseUrl}/is-demo-mode`);
+    } catch (error) {
+      if (baseUrl === FALLBACK_PUBLIC_API_URL) {
+        throw error;
+      }
+      result = await readJsonResponse(`${FALLBACK_PUBLIC_API_URL}/is-demo-mode`);
+    }
+
+    const { response, data } = result;
 
     if (!response.ok) {
       return NextResponse.json({ message: data.message || "Failed to fetch public data." }, { status: response.status });

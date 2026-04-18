@@ -46,6 +46,32 @@ export const authoption: NextAuthOptions = {
         }
 
         try {
+          const requestedRole = credentials.role?.toString().trim().toLowerCase();
+          let roleId = credentials.role;
+
+          // Allow the login form to pass a role name and resolve it via the public roles endpoint.
+          if (requestedRole && !/^[a-f\d]{24}$/i.test(requestedRole)) {
+            const rolesResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/roles`, {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              cache: "no-store",
+            });
+
+            const rolesData = await rolesResponse.json();
+            if (!rolesResponse.ok) {
+              throw new Error(rolesData?.message || "Failed to load role information");
+            }
+
+            const matchedRole = rolesData?.data?.find((role: { _id: string; name: string }) => role.name?.toLowerCase() === requestedRole);
+            if (!matchedRole?._id) {
+              throw new Error("Selected role is not available");
+            }
+
+            roleId = matchedRole._id;
+          }
+
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
             method: "POST",
             headers: {
@@ -54,7 +80,7 @@ export const authoption: NextAuthOptions = {
             body: JSON.stringify({
               identifier: credentials.email,
               password: credentials.password,
-              role_id: credentials.role,
+              role_id: roleId,
             }),
           });
 
